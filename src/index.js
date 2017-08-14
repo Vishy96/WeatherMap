@@ -1,3 +1,4 @@
+//set globalnih varijabli:
 var weatherIconsFile = {
   "200": {
     "label": "thunderstorm with light rain",
@@ -367,11 +368,10 @@ var weatherIconsFile = {
 };
 var map = L.map('map'); 
 const DEFAULT_ZOOM = 7;
-var currentLayer;       
-var currentZoomLevel = DEFAULT_ZOOM; 
+var currentLayer;                           //Reference na trenutni map layer
 var currentWeatherIcons = [];    
 //map.on('load', onMapLoad);                TODO: shvatiti zasto ovako ne mogu rijesti onMapLoad() funkciju, da izbjegnem pisanje na dva mjesta                                
-var geoid = navigator.geolocation.getCurrentPosition(geo_success, geo_error, geo_options); 
+navigator.geolocation.getCurrentPosition(geo_success, geo_error, geo_options); 
 
 map.on("moveend", function (e) { re_callWeatherIcons(); });
 
@@ -383,13 +383,11 @@ function geo_success(position) {
 
 function geo_error() {
       const MAP_REQUEST_API_KEY = "hwG85epZUf05bOLoXpgqgte8Ga0qnejp";
-      //zatrazi input od strane korisnika te inicijaliziraj mapu
-      //tako sto ces zatraziti od Map Request API city/street latLng Object, te tako
+      //WORKFLOW: zatrazi input od strane korisnika te inicijaliziraj mapu
+      //Saljem zahtjev na Map Request API kako bi dobio (na temelju inputa) city/street latLng Object, te tako
       //postaviti pocetni lat i lon
-
       
-      
-      // stvori input elemente preko kojih primam user input 
+      //dinamicki stvori input elemente preko kojih primam user input 
       let user_input = document.createElement('input');
       user_input.type = "text";
       user_input.id = "userInput";
@@ -477,7 +475,7 @@ function createGoogleLayer(){
   document.body.appendChild(script);
 
   googleLayer = L.gridLayer.googleMutant({
-      type: 'roadmap' // valid values are 'roadmap', 'satellite', 'terrain' and 'hybrid'
+      type: 'roadmap' //'roadmap', 'satellite', 'terrain' , 'hybrid'
   });
     return googleLayer;
 }
@@ -503,7 +501,7 @@ var getJSON = function(url, callback) {
 };
 
 
-//manualMapSet je funkcija iz koje pozivam 'map request' API kako bi vratila kordinate trazenog grada
+//manualMapSet je funkcija iz koje pozivam 'map request' API kako bi vratila kordinate trazenog grada (na temelju user inputa)
 
  function manualMapSet (cityName, MAP_REQUEST_API_KEY, DEFAULT_ZOOM){ 
 
@@ -512,6 +510,7 @@ var getJSON = function(url, callback) {
             getJSON(url_constructor_MR, function(err, data) {
               
             if (err != null) {
+              //ukoliko se pojavi error, postavi default lat i lng
               default_lat = 45.813155;  //Zagreb
               default_lng = 15.97703;
               mapInit(default_lat, default_lng, DEFAULT_ZOOM);  
@@ -524,7 +523,7 @@ var getJSON = function(url, callback) {
                         
               });
   };
-        
+        //funkcija koju sam stvorio za primanje trenutnih parametara mape potrebnih za bounding box API call na OWM
   function getOWMparam (){
     let mapParams = {
       lon_left : map.getBounds().getWest(),
@@ -566,7 +565,6 @@ var handleOWM = function (err, owmObject){
 var setWeatherIcons = function (owmObjectReference){
 
               const prefix = 'wi wi-';
-              
               let code;
               let icon;
 
@@ -584,11 +582,11 @@ var setWeatherIcons = function (owmObjectReference){
               //PLUGIN CODE END
               var myIcon = [];
               myIcon[i] = L.divIcon({className: icon,
-                           iconSize: [-20,10]  //pomak od prave lokacije na mapi
+                           iconSize: [-20,10]  //pomak od prave lokacije na mapi --BUG?-- PROBLEM: Trenutno nemam nacina za dinamicko postavljanje icon size. Mijenjanje icon size u CSS-u tek trebam istraziti
                             });
                    
                 
-                  let string_title = ["City: ", "Weather: "];
+                  let string_title = ["City: ", "Weather: "];  //title prikazuje onMouseHover na icon markeru
                   let string_popup = [];   
                   string_popup[i]  = '         <b>City:</b> ' + owmObjectReference.list[i].name + '<br>' +
                                      '<b>Temperature (°C):</b> ' + owmObjectReference.list[i].main.temp + '<br>' +
@@ -610,7 +608,7 @@ var setWeatherIcons = function (owmObjectReference){
 
   var onMapLoad = function(){
   
-    mapSet();  //postavi current map layer
+    mapSet();                     //TODO: error handling, promise?
     callWeatherIcons();
   }
 
@@ -620,7 +618,9 @@ var re_callWeatherIcons = function () {
 };
 
 var clearWeatherIcons = function () {
-  //nazalost, clear/set pomocu Clustera (efikasnost++), iz nekog razloga, ne radi kao sto je navedeno u dokumentaciji -> prisiljen korisitit for petlju
+  //nazalost, clear/set pomocu Clustera (efikasnost++), iz nekog razloga, ne radi kao sto je navedeno u dokumentaciji -> prisiljen korisitit for petlju, sto mi smanjuje efikasnost aplikacije
+  //uz ispravan rad Clustera, clearWeatherIcons bi radio na principu map.removeLayer(markerCluster), gdje bi markerCluster bio varijabla koja ima reference na sve markere na mapi, nastale 
+  //na sljedeci nacin : ---> for_petlja{markerCluster.addLayer(trenutni marker);} map.addLayer(markerCluster) <---    DISMISS LAYERA bi izgledao kao: map.removeLayer(markerCluster); (ne bi koristio for petlju --> efikasnost++)
     for(let i=0; i<currentWeatherIcons.length ; i++)
       map.removeLayer(currentWeatherIcons[i]);
 };
