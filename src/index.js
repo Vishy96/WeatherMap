@@ -1,18 +1,30 @@
-//set globalnih varijabli:
-var map = L.map('map'); 
+const DEFAULT_ZOOM = 8;
+const DEFAULT_MAP_OPTIONS = {"minZoom": 2, "maxZoom": 11};
+const DEFAULT_TILE_LAYER = "Bing"; 
+const DEFAULT_CACHE_TIME = 15*60*1000; //ms
+var map = L.map('map', DEFAULT_MAP_OPTIONS); 
 var alreadySettingWeatherIcons = true;
-var globalMarkerReferenceCounter = 0;
-const DEFAULT_ZOOM = 9;
-const DEFAULT_TILE_LAYER = "Bing";                           
-var currentWeatherIcons = [];                          
+var globalMarkerReferenceCounter = 0;                        
+var currentWeatherIcons = [];           
+var activeCenter = 0;                                                           
+var fetchLimit = [null, null, 16, 10, 6.5, 3.4, 1.5, 1, 0.5, 0.3, 0.12, 0.075]; //MAX ZOOM: 11, MIN ZOOM: 2
+var iconCache = new Cache();
 navigator.geolocation.getCurrentPosition(geoSuccess, geoError, geoOptions); 
 
-map.on("moveend", function (e) {  
-                                if(!alreadySettingWeatherIcons){
-                                  console.log("Inside moveend event handler: calling clearAndResetWeatherIcons()");
-                                  clearAndResetWeatherIcons();
-                                  } 
-                              });
+map.on("moveend", function (e) { let currentCenter = map.getCenter();
+                                 let currentDisplacement = Math.sqrt( Math.pow((currentCenter.lat - activeCenter.lat),2)  + Math.pow((currentCenter.lng - activeCenter.lng),2));
+                                  if(currentDisplacement >= fetchLimit[map.getZoom()] && !alreadySettingWeatherIcons){
+                                    activeCenter = currentCenter;
+                                    let owmCacheObject = iconCache.get(getCurrentBoundsCacheCode());
+                                    if(owmCacheObject){
+                                      //ZOVI IZ MEMORIJE
+                                      console.log("Calling setWeatherIcons() from Cache...");
+                                      clearAndResetWeatherIconsFromCache(JSON.parse(owmCacheObject));
+                                    }else{
+                                      clearAndResetWeatherIcons();
+                                  }}
+                                });
+                               
 
 function geoSuccess(position) {
  mapInit(position.coords.latitude, position.coords.longitude, DEFAULT_ZOOM);
@@ -25,7 +37,6 @@ function geoError() {
       //Saljem zahtjev na Map Request API kako bi dobio (na temelju inputa) city/street latLng Object, te tako
       //postaviti pocetni lat i lon
       
-      //dinamicki stvori input elemente preko kojih primam user input 
       let userInput = document.createElement('input');
       userInput.type = "text";
       userInput.id = "userInput";
@@ -90,9 +101,8 @@ function createGoogleTileLayer(){
  // googleMaps API ukljucen u script tag 
  return L.gridLayer.googleMutant({
       type: 'roadmap' //'roadmap', 'satellite', 'terrain' , 'hybrid'
-  });
-    
-}
+  });  
+};
 
 function setDefaultTileLayer (){
   switch (DEFAULT_TILE_LAYER) {
@@ -105,7 +115,7 @@ function setDefaultTileLayer (){
     default:
        createOSMTileLayer().addTo(map);
   }   
-}
+};
 
 var getJSON = function(url, callback) {
     var xhr = new XMLHttpRequest();
@@ -121,8 +131,7 @@ var getJSON = function(url, callback) {
     };
     xhr.send();
 };
-//manualMapSet je funkcija iz koje pozivam 'map request' API kako bi vratila kordinate trazenog grada (na temelju user inputa)
- function manualMapSet (cityName, MAP_REQUEST_API_KEY, DEFAULT_ZOOM){ 
+function manualMapSet (cityName, MAP_REQUEST_API_KEY, DEFAULT_ZOOM){ 
 
             let url_constructor_MR = 'http://www.mapquestapi.com/geocoding/v1/address?key=' + MAP_REQUEST_API_KEY + '&location=' + cityName;
           
@@ -134,21 +143,19 @@ var getJSON = function(url, callback) {
               default_lng = 15.97703;
               mapInit(default_lat, default_lng, DEFAULT_ZOOM);  
               alert('Something went wrong: ' + err + ' Setting default...');
-
             } else {
               mapInit(data.results[0].locations[0].latLng.lat, data.results[0].locations[0].latLng.lng, DEFAULT_ZOOM);
             }
              onMapLoad();  //set map current layer, TO DO: ukoliko uspijem osposobiti onload event listener, mogao bih onMapLoad premjestiti tamo          
               });
   };
-
   //funkcija koju sam stvorio za primanje trenutnih parametara mape potrebnih za bounding box API call na OWM
   function getOWMparam (){
     let mapParams = {
-      lon_left : map.getBounds().getWest(),
-      lon_right: map.getBounds().getEast(),
-      lat_bottom: map.getBounds().getSouth(),
-      lat_top: map.getBounds().getNorth(),
+      lon_left : map.getBounds().getWest().toFixed(2),
+      lon_right: map.getBounds().getEast().toFixed(2),
+      lat_bottom: map.getBounds().getSouth().toFixed(2),
+      lat_top: map.getBounds().getNorth().toFixed(2),
       zoom_level: map.getZoom()
     }  
     return mapParams;
@@ -158,6 +165,7 @@ var getJSON = function(url, callback) {
       var callWeatherIcons = function (){
       const OWM_API_KEY = '0826bd98905da40265152b2bb7f9d3e8';
       let owmParams = getOWMparam();
+   
       let url_constructor_OWM = 'http://api.openweathermap.org/data/2.5/box/city?bbox=' + owmParams.lon_left + ','
                                                                                         + owmParams.lat_bottom + ','
                                                                                         + owmParams.lon_right + ','
@@ -166,8 +174,7 @@ var getJSON = function(url, callback) {
                                                                                         + '&APPID=' 
                                                                                         + OWM_API_KEY 
                                                                                         + '&units=metric';
-      console.log("callWeatherIcons() called!");
-    //poziv na API OWM                                                                                  
+                                                                                    
       getJSON(url_constructor_OWM, handleOWM);                
   };
   
@@ -178,18 +185,18 @@ var handleOWM = function (err, owmObject){
             console.log("Error inside handleOWM!");
               alert("Error occured while trying to reach data from OWM API!");
             } else {  
-             globalMarkerReferenceCounter = owmObject.cnt;
-              console.log('Markers to set: ' + owmObject.cnt);
-              console.log("Inside callWeatherIcons() -> getJSON() -> handleOWM(): calling setWeatherIcons()");
-              setWeatherIcons(owmObject);
+             iconCache.put(getCurrentBoundsCacheCode(), JSON.stringify(owmObject), DEFAULT_CACHE_TIME);
+             console.log("Calling setWeatherIcons() from handleOWM()...");
+             setWeatherIcons(owmObject);
             }
   };
 
 var setWeatherIcons = function (owmObjectReference){
-              console.log("setWeatherIcons() called!");
               const prefix = 'wi wi-';
               let code;
               let icon;
+
+              globalMarkerReferenceCounter = owmObjectReference.cnt;
 
               for(let i = 0; i < owmObjectReference.cnt; i++){
               code = owmObjectReference.list[i].weather[0].id;
@@ -205,10 +212,10 @@ var setWeatherIcons = function (owmObjectReference){
 
               var myIcon = [];
               myIcon[i] = L.divIcon({className: icon,
-                           iconSize: [-20,10]  //pomak od prave lokacije na mapi --BUG?-- PROBLEM: Trenutno nemam nacina za dinamicko postavljanje icon size. Mijenjanje icon size u CSS-u tek trebam istraziti
+                           iconSize: [-20,10]  //pomak od prave lokacije na mapi --BUG?-- 
                             });
 
-                  let string_title = ["City: ", "Weather: "];  //title prikazuje onMouseHover na icon markeru
+                  let string_title = ["City: ", "Weather: "];  
                   let string_popup = [];   
                   string_popup[i]  = '         <b>City:</b> ' + owmObjectReference.list[i].name + '<br>' +
                                      '<b>Temperature (°C):</b> ' + owmObjectReference.list[i].main.temp + '<br>' +
@@ -220,26 +227,31 @@ var setWeatherIcons = function (owmObjectReference){
                                                                                      title: string_title[0] + owmObjectReference.list[i].name 
                                                                                     + '\n' +  string_title[1] + owmObjectReference.list[i].weather[0].description}).bindPopup(string_popup[i]).addTo(map);
  
-                   console.log("Marker " + i + " added to map!");    
                    }
                     alreadySettingWeatherIcons = false;              
                 };
 
   var onMapLoad = function(){
     mapSet();  
-    console.log("Inside onMapLoad: calling CallWeatherIcons() !");                  //TODO: error handling, promise?
     callWeatherIcons();
+    activeCenter = map.getCenter();
   }
 
 var clearAndResetWeatherIcons = function (){
       alreadySettingWeatherIcons = true;
-     console.log("Ulazim u clearAndResetWeatherIcons()..." );
       for(let i=0; i < globalMarkerReferenceCounter; i++){
-      map.removeLayer(currentWeatherIcons[i]);
-      console.log("Marker number: " + i + " cleared!")     
+      map.removeLayer(currentWeatherIcons[i]);   
       }
-        console.log("Calling callWeatherIcons() from clearAndResetWeatherIcons()");
+   //     console.log("Calling callWeatherIcons() from clearAndResetWeatherIcons()");
           callWeatherIcons(); 
+};
+
+var clearAndResetWeatherIconsFromCache = function (cacheObject){
+      alreadySettingWeatherIcons = true;
+      for(let i=0; i < globalMarkerReferenceCounter; i++){
+      map.removeLayer(currentWeatherIcons[i]);   
+      }
+          setWeatherIcons(cacheObject); 
 };
 
 var setLeafletControlLayers = function () {
@@ -261,4 +273,129 @@ var setLeafletControlLayers = function () {
   var baselayMaps = {"Google Maps": googleTileLayer, "Bing": bingTileLayer, "OpenStreetMap": osmTileLayer};
   var layerControl = L.control.layers(baselayMaps, overlayMaps).addTo(map);
 
+};
+
+var getCurrentBoundsCacheCode = function() {
+  return map.getZoom() + returnCacheCodedBound(map.getBounds().getSouth()) + returnCacheCodedBound(map.getBounds().getWest());
+}
+
+var returnCacheCodedBound = function(thisBound) {
+
+  let sign;
+  let decimalPart;
+  let mapZoom = map.getZoom();
+
+   if(thisBound < 0)
+       sign = -1;
+   else 
+       sign = 1;
+
+   if(mapZoom == 11 || mapZoom == 10){
+   
+ decimalPart = Math.abs(thisBound % 1);
+
+       switch(true){
+        case (decimalPart < 0.25):  
+             decimalPart = 0;
+             break;
+        case (decimalPart < 0.5 && decimalPart >= 0.25):
+             decimalPart = 0.25 * sign;
+             break;
+        case (decimalPart < 0.75 && decimalPart >= 0.5):
+             decimalPart = 0.5 * sign;
+             break;
+        default:
+             decimalPart = 0.75 * sign;
+                      }
+             return Math.floor(thisBound) + decimalPart + "";
+
+
+   } else if(mapZoom == 9 || mapZoom == 8 ){
+
+        return Math.floor(thisBound) + "";
+
+   } else if (mapZoom == 7){
+    	//zaokruzi na 2
+     decimalPart = Math.abs((thisBound/10) % 1);
+   switch(true){
+        case (decimalPart < 0.2):  
+             decimalPart = 0;
+             break;
+        case (decimalPart < 0.4 && decimalPart >= 0.2):
+             decimalPart = 0.2 * sign * 10;
+             break;
+        case (decimalPart < 0.6 && decimalPart >= 0.4):
+             decimalPart = 0.4 * sign * 10;
+             break;
+       case (decimalPart < 0.8 && decimalPart >= 0.6):
+             decimalPart = 0.6 * sign * 10;
+             break;
+       default:
+             decimalPart = 0.8 * sign * 10;
+  
+                      }
+            return Math.floor((thisBound/10)) * 10 + decimalPart + "";
+
+
+   }else if(mapZoom == 6){
+      
+            //zaokruzi na 2.5
+        decimalPart = Math.abs((thisBound/10)%1);
+          switch(true){
+        case (decimalPart < 0.25):   
+             decimalPart = 0;
+             break;
+        case (decimalPart < 0.5 && decimalPart >= 0.25):
+             decimalPart = 0.25 * sign * 10;
+             break;
+        case (decimalPart < 0.75 && decimalPart >= 0.5):
+             decimalPart = 0.5 * sign * 10;
+             break;
+        default:
+             decimalPart = 0.75 * sign * 10;
+                      }
+             return Math.floor((thisBound/10)) * 10 + decimalPart + "";
+
+   }else if(mapZoom == 5){
+
+          //Zaokruzi na 5
+       decimalPart = Math.abs((thisBound/10) % 1);
+          switch(true){
+        case (decimalPart < 0.5):  
+             decimalPart = 0;
+             break;
+        default:
+             decimalPart = 0.5 * sign * 10;
+          }
+            return Math.floor((thisBound/10))*10 + decimalPart + "";
+
+   }else if (mapZoom == 4 || mapZoom == 3){
+      
+            return Math.floor((thisBound/10))*10 + "";
+
+        
+
+   }else if (mapZoom == 2){
+              //zaokruzi na desetice
+             decimalPart = Math.abs((thisBound/100) % 1);
+   switch(true){
+        case (decimalPart < 0.2):  
+             decimalPart = 0;
+             break;
+        case (decimalPart < 0.4 && decimalPart >= 0.2):
+             decimalPart = 0.2 * sign * 100;
+             break;
+        case (decimalPart < 0.6 && decimalPart >= 0.4):
+             decimalPart = 0.4 * sign * 100;
+             break;
+       case (decimalPart < 0.8 && decimalPart >= 0.6):
+             decimalPart = 0.6 * sign * 100;
+             break;
+       default:
+             decimalPart = 0.8 * sign * 100;
+  
+                      }
+            return Math.floor((thisBound/100))*100 + decimalPart + "";
+   }
+  
 };
