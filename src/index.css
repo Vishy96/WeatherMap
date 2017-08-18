@@ -1,8 +1,15 @@
 
-#map{
-    width: 800px;
-    height: 600px;
+#map {
+	/* background-color: #08304a; */
+	position: absolute;
+	float: left;
+	top: 1%;
+	height: 98%;
+	width: 100%;
+	z-index: 7;
 }
+
+
 
 input {
   width: 300px;
@@ -13,11 +20,24 @@ input {
   float: left;
   color: #262626;
   padding-left: 45px;
+  position: relative;
+  z-index: 8;
 }
 
 button {
     width: 75px;
     height: 50px;
     font-size: 10pt;
+    position: relative;
+    z-index: 8;
 }
 
+body {
+    padding: 0px;
+    margin: 0px;
+    height: 100%;
+}
+
+html {
+	height: 100%;
+}

@@ -16,6 +16,7 @@
     "babel-preset-latest": "^6.14.0",
     "babel-register": "^6.24.1",
     "express": "^4.15.4",
+    "gradients": "^1.0.1",
     "leaflet": "^1.2.0",
     "leaflet-search": "^2.7.2",
     "leaflet.markercluster": "^1.0.6",

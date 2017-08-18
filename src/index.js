@@ -37,9 +37,9 @@ function geoError() {
       //Saljem zahtjev na Map Request API kako bi dobio (na temelju inputa) city/street latLng Object, te tako
       //postaviti pocetni lat i lon
       
+   
       let userInput = document.createElement('input');
       userInput.type = "text";
-      userInput.id = "userInput";
       let buttonSubmit = document.createElement('button');
       buttonSubmit.textContent = 'Submit';
       document.body.appendChild(userInput);
@@ -49,7 +49,6 @@ function geoError() {
               manualMapSet(userInput.value, MAP_REQUEST_API_KEY, DEFAULT_ZOOM);
               document.body.removeChild(userInput);
               document.body.removeChild(buttonSubmit);
-
       }); 
   };
   
