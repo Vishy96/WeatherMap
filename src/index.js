@@ -1,7 +1,8 @@
 const DEFAULT_ZOOM = 8;
-const DEFAULT_MAP_OPTIONS = {"minZoom": 2, "maxZoom": 11};
+const DEFAULT_MAP_OPTIONS = {"minZoom": 2, "maxZoom": 11, center: [0,0], zoom: DEFAULT_ZOOM};
 const DEFAULT_TILE_LAYER = "Bing"; 
 const DEFAULT_CACHE_TIME = 15*60*1000; //ms
+const MAP_REQUEST_API_KEY = "hwG85epZUf05bOLoXpgqgte8Ga0qnejp";
 var map = L.map('map', DEFAULT_MAP_OPTIONS); 
 var alreadySettingWeatherIcons = true;
 var globalMarkerReferenceCounter = 0;                        
@@ -9,7 +10,12 @@ var currentWeatherIcons = [];
 var activeCenter = 0;                                                           
 var fetchLimit = [null, null, 16, 10, 6.5, 3.4, 1.5, 1, 0.5, 0.3, 0.12, 0.075]; //MAX ZOOM: 11, MIN ZOOM: 2
 var iconCache = new Cache();
-navigator.geolocation.getCurrentPosition(geoSuccess, geoError, geoOptions); 
+
+var onMapLoad = function(){
+    mapSet();  
+    callWeatherIcons();
+    activeCenter = map.getCenter();
+  }
 
 map.on("moveend", function (e) { let currentCenter = map.getCenter();
                                  let currentDisplacement = Math.sqrt( Math.pow((currentCenter.lat - activeCenter.lat),2)  + Math.pow((currentCenter.lng - activeCenter.lng),2));
@@ -31,27 +37,36 @@ function geoSuccess(position) {
  onMapLoad();
 }
 
-function geoError() {
-      const MAP_REQUEST_API_KEY = "hwG85epZUf05bOLoXpgqgte8Ga0qnejp";
-      //WORKFLOW: zatrazi input od strane korisnika te inicijaliziraj mapu
-      //Saljem zahtjev na Map Request API kako bi dobio (na temelju inputa) city/street latLng Object, te tako
-      //postaviti pocetni lat i lon
-      
-   
+function geoInfoLoad(lat, lon){
+  mapInit(lat, lon, DEFAULT_ZOOM);
+  onMapLoad();
+};
+
+function geoError(error) {
+
+ 
+    
+      let form = document.createElement('form');
+      form.className = "form-wrapper";
       let userInput = document.createElement('input');
       userInput.type = "text";
+      userInput.placeholder = "Search your location...";
+      userInput.hasAttribute('required');
+      userInput.id = "search_1";
       let buttonSubmit = document.createElement('button');
-      buttonSubmit.textContent = 'Submit';
-      document.body.appendChild(userInput);
-      document.body.appendChild(buttonSubmit);
-
-      buttonSubmit.addEventListener("click", function Submitter (){
-              manualMapSet(userInput.value, MAP_REQUEST_API_KEY, DEFAULT_ZOOM);
-              document.body.removeChild(userInput);
-              document.body.removeChild(buttonSubmit);
-      }); 
-  };
+      buttonSubmit.textContent = "Search";
+      buttonSubmit.id = "submit";
+      buttonSubmit.type = "button";
+      form.appendChild(userInput);
+      form.appendChild(buttonSubmit);
+      document.body.appendChild(form);
+     
+    buttonSubmit.addEventListener("click", function Submitter (){
+      
+     getOSMApiResponse(userInput.value, form);
   
+  });
+};
 
 var geoOptions = {
   enableHighAccuracy: false, 
@@ -59,22 +74,54 @@ var geoOptions = {
   timeout           : 20000
 };
  
+
 function mapInit(latitude, longitude, default_zoom){
 
   map.setView([latitude, longitude], default_zoom);  
 
   // leaflet search map plugin. Pretrazivanje pomocu web API nominatim.openstreetmap.org. Podrazumijeva se da postoji  
   // varijabla 'map' koja je leaflet object L.map
-  map.addControl( new L.Control.Search({
-		url: 'http://nominatim.openstreetmap.org/search?format=json&q={s}',
+  var markerRef = L.marker([0,0], {riseOnHover: true,
+  title: "Click for more information"});
+
+  var searchControl = new L.Control.Search({
+	url: 'http://nominatim.openstreetmap.org/search?format=json&q={s}',
 		jsonpParam: 'json_callback',
 		propertyName: 'display_name',
 		propertyLoc: ['lat','lon'],
-		marker: L.circleMarker([0,0],{radius:30}),
+		marker: markerRef,
 		autoCollapse: true,
 		autoType: false,
 		minLength: 2
-    }));
+    });
+
+   map.addControl(searchControl);
+
+   searchControl.addEventListener('search:locationfound', function (data) {
+                      
+                       let popupBox = document.createElement('div');
+                       popupBox.className="box";
+                       popupBox.innerText = 'Do you want to set this location as your default entry point?\n\n';
+                       let locationSetButton = document.createElement('button');
+                       locationSetButton.className="button";
+                       locationSetButton.textContent = "Set Default"; 
+                       popupBox.appendChild(locationSetButton);
+                       markerRef.bindPopup(popupBox);
+                       locationSetButton.addEventListener("click", () => {
+                       localStorage.removeItem('currentEntry');
+                       localStorage.setItem('currentEntry', JSON.stringify(data.latlng));
+                       markerRef.closePopup();
+                       markerRef.unbindPopup();
+                       let popupBoxAfter = document.createElement('div');
+                       popupBoxAfter.className="box";
+                       popupBoxAfter.innerText = "This is now your new default entry point";
+                       markerRef.bindPopup(popupBoxAfter);
+                       });
+                     
+      
+  })
+
+  
 }
 
 function mapSet(){  
@@ -130,11 +177,12 @@ var getJSON = function(url, callback) {
     };
     xhr.send();
 };
+  //manualMapSet se u trenutnoj verziji ne koristi
 function manualMapSet (cityName, MAP_REQUEST_API_KEY, DEFAULT_ZOOM){ 
 
             let url_constructor_MR = 'http://www.mapquestapi.com/geocoding/v1/address?key=' + MAP_REQUEST_API_KEY + '&location=' + cityName;
           
-            getJSON(url_constructor_MR, function(err, data) {
+            getJSON(url_constructor_MR, function (err, data) {
               
             if (err != null) {
               //ukoliko se pojavi error, postavi default lat i lng
@@ -144,11 +192,64 @@ function manualMapSet (cityName, MAP_REQUEST_API_KEY, DEFAULT_ZOOM){
               alert('Something went wrong: ' + err + ' Setting default...');
             } else {
               mapInit(data.results[0].locations[0].latLng.lat, data.results[0].locations[0].latLng.lng, DEFAULT_ZOOM);
+              L.marker([data.results[0].locations[0].latLng.lat, data.results[0].locations[0].latLng.lng], {title: cityName}).addTo(map);
             }
-             onMapLoad();  //set map current layer, TO DO: ukoliko uspijem osposobiti onload event listener, mogao bih onMapLoad premjestiti tamo          
+              onMapLoad();         
               });
   };
-  //funkcija koju sam stvorio za primanje trenutnih parametara mape potrebnih za bounding box API call na OWM
+          
+  function getOSMApiResponse (cityName, searchFormToRemove){
+   
+    let url_constructor_OSM = "http://nominatim.openstreetmap.org/search?format=json&city=" + cityName;
+                           
+            getJSON(url_constructor_OSM, function (err, data) {
+              
+             if (err != null) {
+               
+               alert('Something went wrong: ' + err + '\nSetting default...');
+            } else {
+                  
+                   let table = document.createElement("table");
+                  //TODO: Implement 'Show All' button which would collapse the whole search table content
+                   var i = 0;
+                   console.log(data[i]);
+                   let thisLat = 45;
+                      let thisLon = 15;
+                   while(data[i] != undefined){
+                      
+                      let tr = document.createElement('tr');   
+
+                      let td1 = document.createElement('td');
+                      let td2 = document.createElement('td');
+                      let td3 = document.createElement('td');
+
+                      let text1 = document.createTextNode(i+1);
+                      let text2 = document.createTextNode(data[i].display_name);
+
+                      let btn = document.createElement('input');
+                      btn.type = "button";
+                      btn.className="button";
+                      btn.id = "b" + i;
+                      btn.value = "Show this on map";                 
+                    
+                      td1.appendChild(text1);
+                      td2.appendChild(text2);
+                      td3.appendChild(btn);
+                      tr.appendChild(td1);
+                      tr.appendChild(td2);
+                      tr.appendChild(td3);
+
+                      table.appendChild(tr);
+                       i++;
+                   }                   
+                   document.body.appendChild(table); 
+
+                   for(let j=0; j<i;j++)
+                    handleElement(j, data, table, searchFormToRemove);
+             }       
+          }); 
+  };
+  
   function getOWMparam (){
     let mapParams = {
       lon_left : map.getBounds().getWest().toFixed(2),
@@ -161,7 +262,7 @@ function manualMapSet (cityName, MAP_REQUEST_API_KEY, DEFAULT_ZOOM){
   };
 
   //workflow funkcije callWeatherIcons: callWeatherIcons() -> getOWMparam() -> getJSON(url, handleOWM) -> handleOWM() -> setWeatherIcons()
-      var callWeatherIcons = function (){
+var callWeatherIcons = function (){
       const OWM_API_KEY = '0826bd98905da40265152b2bb7f9d3e8';
       let owmParams = getOWMparam();
    
@@ -230,18 +331,48 @@ var setWeatherIcons = function (owmObjectReference){
                     alreadySettingWeatherIcons = false;              
                 };
 
-  var onMapLoad = function(){
-    mapSet();  
-    callWeatherIcons();
-    activeCenter = map.getCenter();
-  }
+var setWeatherIcon = function (owmObjectReference){
+              const prefix = 'wi wi-';
+              let code;
+              let icon;
+
+              globalMarkerReferenceCounter++;
+
+              code = owmObjectReference.weather[0].id;
+              icon = weatherIconsFile[code].icon;
+                
+              //PLUGIN CODE: 
+              // If we are not in the ranges mentioned above, add a day/night prefix.
+              if (!(code > 699 && code < 800) && !(code > 899 && code < 1000)) {
+                icon = 'day-' + icon;
+              }
+              icon = prefix + icon;
+              //PLUGIN CODE END
+
+              var myIcon = L.divIcon({className: icon,
+                           iconSize: [-20,10]  //pomak od prave lokacije na mapi --BUG?-- 
+                            });
+
+                  let string_title = ["City: ", "Weather: "];  
+                  let string_popup = '         <b>City:</b> ' + owmObjectReference.name + '<br>' +
+                                     '<b>Temperature (°C):</b> ' + owmObjectReference.main.temp + '<br>' +
+                                     '    <b>Humidity (%):</b> ' + owmObjectReference.main.humidity + '<br>' +
+                                     '  <b>Pressure (hPa):</b> ' + owmObjectReference.main.pressure + '<br>' +
+                                     '<b>Wind speed (m/s):</b> ' + owmObjectReference.wind.speed;
+                    
+                  currentWeatherIcons[(globalMarkerReferenceCounter-1)] = L.marker([owmObjectReference.coord.lat, owmObjectReference.coord.lon], {icon: myIcon,
+                                                                                     title: string_title[0] + owmObjectReference.name 
+                                                                                    + '\n' +  string_title[1] + owmObjectReference.weather[0].description}).bindPopup(string_popup).addTo(map);
+ 
+                   
+                    alreadySettingWeatherIcons = false;              
+                };
 
 var clearAndResetWeatherIcons = function (){
       alreadySettingWeatherIcons = true;
       for(let i=0; i < globalMarkerReferenceCounter; i++){
       map.removeLayer(currentWeatherIcons[i]);   
       }
-   //     console.log("Calling callWeatherIcons() from clearAndResetWeatherIcons()");
           callWeatherIcons(); 
 };
 
@@ -254,7 +385,7 @@ var clearAndResetWeatherIconsFromCache = function (cacheObject){
 };
 
 var setLeafletControlLayers = function () {
-  //TODO: DODAJ overlayere koji omogucuju izbor prikaza pojedinog map providera (SATELLITE, ROADMAP, etc)
+  
   var temperature = L.OWM.temperature({appId: '0826bd98905da40265152b2bb7f9d3e8', showLegend: false});
   var clouds = L.OWM.clouds({appId: '0826bd98905da40265152b2bb7f9d3e8', showLegend: false});
   var precipitation = L.OWM.precipitation({appId: '0826bd98905da40265152b2bb7f9d3e8'});
@@ -398,3 +529,67 @@ var returnCacheCodedBound = function(thisBound) {
    }
   
 };
+
+var getWeatherByCityName = function (cityName, handlerFunction){
+  const OWM_API_KEY = '0826bd98905da40265152b2bb7f9d3e8';
+
+  let url_constructor_OWM = 'http://api.openweathermap.org/data/2.5/weather?q=' + cityName + '&APPID=0826bd98905da40265152b2bb7f9d3e8&units=metric';
+
+  getJSON(url_constructor_OWM, handlerFunction);
+
+};
+
+var WeatherByCityNameHandaler = function (err, owmObject) {
+
+    if(err != null){
+      alert("Error while trying to reach weather by city name. " + "\nError: " + err);
+    }else{
+      alreadySettingWeatherIcons = true;
+      setWeatherIcon(owmObject);
+    }
+
+}
+
+function handleElement(i, data, table, formToRemove) {
+    document.getElementById("b"+i).onclick= function() {
+        geoInfoLoad(data[i].lat, data[i].lon);
+        document.body.removeChild(table);
+        document.body.removeChild(formToRemove);
+
+        //create marker:
+         let markerRef = L.marker([data[i].lat, data[i].lon], {riseOnHover: true,
+         title: data[i].display_name}).addTo(map);
+
+          getWeatherByCityName(data[i].display_name, WeatherByCityNameHandaler);
+
+         //TO DO: WRAP U FUNKCIJU
+         let popupBox = document.createElement('div');
+                       popupBox.className="box";
+                       popupBox.innerText = 'Do you want to set this location as your default entry point?\n\n';
+                       let locationSetButton = document.createElement('button');
+                       locationSetButton.className="button";
+                       locationSetButton.textContent = "Set Default"; 
+                       popupBox.appendChild(locationSetButton);
+                       markerRef.bindPopup(popupBox);
+                       locationSetButton.addEventListener("click", () => {
+                       localStorage.removeItem('currentEntry');
+                       localStorage.setItem('currentEntry', JSON.stringify({lat: data[i].lat, lng: data[i].lon}));
+                       markerRef.closePopup();
+                       markerRef.unbindPopup();
+                       let popupBoxAfter = document.createElement('div');
+                       popupBoxAfter.className="box";
+                       popupBoxAfter.innerText = "This is now your new default entry point";
+                       markerRef.bindPopup(popupBoxAfter);
+                       });
+}}
+
+//ENTRY POINT:
+
+if(localStorage.getItem('currentEntry')){
+  let defaultEntry = JSON.parse(localStorage.getItem('currentEntry'));
+  console.log(defaultEntry);
+  mapInit(defaultEntry.lat, defaultEntry.lng, DEFAULT_ZOOM);
+  onMapLoad();
+}else
+
+navigator.geolocation.getCurrentPosition(geoSuccess, geoError, geoOptions); 

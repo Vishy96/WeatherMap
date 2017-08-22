@@ -22,7 +22,7 @@
 	width: 450px;
 }
 
-.form-wrapper #search {
+.form-wrapper #search_1 {
 	border: 1px solid #CCC;
 	-webkit-box-shadow: 0 1px 1px #ddd inset, 0 1px 0 #FFF;
 	-moz-box-shadow: 0 1px 1px #ddd inset, 0 1px 0 #FFF;
@@ -38,7 +38,7 @@
 	width: 320px;
 }
 
-.form-wrapper #search:focus {
+.form-wrapper #search_1:focus {
 	border-color: #aaa;
 	-webkit-box-shadow: 0 1px 1px #bbb inset;
 	-moz-box-shadow: 0 1px 1px #bbb inset;
@@ -46,9 +46,9 @@
 	outline: 0;
 }
 
-.form-wrapper #search:-moz-placeholder,
-.form-wrapper #search:-ms-input-placeholder,
-.form-wrapper #search::-webkit-input-placeholder {
+.form-wrapper #search_1:-moz-placeholder,
+.form-wrapper #search_1:-ms-input-placeholder,
+.form-wrapper #search_1::-webkit-input-placeholder {
 	color: #999;
 	font-weight: normal;
 }
