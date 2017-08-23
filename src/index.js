@@ -4,9 +4,11 @@ const DEFAULT_TILE_LAYER = "Bing";
 const DEFAULT_CACHE_TIME = 15*60*1000; //ms
 const MAP_REQUEST_API_KEY = "hwG85epZUf05bOLoXpgqgte8Ga0qnejp";
 var map = L.map('map', DEFAULT_MAP_OPTIONS); 
+var weatherIconsLayer = L.layerGroup().addTo(map);
 var alreadySettingWeatherIcons = true;
 var globalMarkerReferenceCounter = 0;                        
-var currentWeatherIcons = [];           
+var currentWeatherIcons = [];    
+var onLoadMarkerRef = false;  
 var activeCenter = 0;                                                           
 var fetchLimit = [null, null, 16, 10, 6.5, 3.4, 1.5, 1, 0.5, 0.3, 0.12, 0.075]; //MAX ZOOM: 11, MIN ZOOM: 2
 var iconCache = new Cache();
@@ -35,6 +37,9 @@ map.on("moveend", function (e) { let currentCenter = map.getCenter();
 function geoSuccess(position) {
  mapInit(position.coords.latitude, position.coords.longitude, DEFAULT_ZOOM);
  onMapLoad();
+  onLoadMarkerRef = [];
+  onLoadMarkerRef[0] = L.marker([position.coords.latitude, position.coords.longitude], {title: "Click for more information", riseOnHover: true}).addTo(map);
+  setMarkerPopup(onLoadMarkerRef[0], {lat: position.coords.latitude, lng: position.coords.longitude });
 }
 
 function geoInfoLoad(lat, lon){
@@ -44,7 +49,7 @@ function geoInfoLoad(lat, lon){
 
 function geoError(error) {
 
- 
+      onLoadMarkerRef = [];
     
       let form = document.createElement('form');
       form.className = "form-wrapper";
@@ -61,9 +66,15 @@ function geoError(error) {
       form.appendChild(buttonSubmit);
       document.body.appendChild(form);
      
+      let table;
+      let firstClick = true;
     buttonSubmit.addEventListener("click", function Submitter (){
-      
-     getOSMApiResponse(userInput.value, form);
+      if(!firstClick)
+        document.body.removeChild(table);
+
+      table = document.createElement("table");
+     getOSMApiResponse(userInput.value, form, table);
+     firstClick = false;
   
   });
 };
@@ -99,27 +110,15 @@ function mapInit(latitude, longitude, default_zoom){
 
    searchControl.addEventListener('search:locationfound', function (data) {
                       
-                       let popupBox = document.createElement('div');
-                       popupBox.className="box";
-                       popupBox.innerText = 'Do you want to set this location as your default entry point?\n\n';
-                       let locationSetButton = document.createElement('button');
-                       locationSetButton.className="button";
-                       locationSetButton.textContent = "Set Default"; 
-                       popupBox.appendChild(locationSetButton);
-                       markerRef.bindPopup(popupBox);
-                       locationSetButton.addEventListener("click", () => {
-                       localStorage.removeItem('currentEntry');
-                       localStorage.setItem('currentEntry', JSON.stringify(data.latlng));
-                       markerRef.closePopup();
-                       markerRef.unbindPopup();
-                       let popupBoxAfter = document.createElement('div');
-                       popupBoxAfter.className="box";
-                       popupBoxAfter.innerText = "This is now your new default entry point";
-                       markerRef.bindPopup(popupBoxAfter);
-                       });
-                     
-      
-  })
+                       if(onLoadMarkerRef){
+                         map.removeLayer(onLoadMarkerRef[0]);
+                         if(onLoadMarkerRef[1] != undefined)
+                         weatherIconsLayer.removeLayer(onLoadMarkerRef[1]);
+                         onLoadMarkerRef = false;
+                       }
+
+                      setMarkerPopup(markerRef, data.latlng); 
+  });
 
   
 }
@@ -177,28 +176,8 @@ var getJSON = function(url, callback) {
     };
     xhr.send();
 };
-  //manualMapSet se u trenutnoj verziji ne koristi
-function manualMapSet (cityName, MAP_REQUEST_API_KEY, DEFAULT_ZOOM){ 
-
-            let url_constructor_MR = 'http://www.mapquestapi.com/geocoding/v1/address?key=' + MAP_REQUEST_API_KEY + '&location=' + cityName;
           
-            getJSON(url_constructor_MR, function (err, data) {
-              
-            if (err != null) {
-              //ukoliko se pojavi error, postavi default lat i lng
-              default_lat = 45.813155;  //Zagreb
-              default_lng = 15.97703;
-              mapInit(default_lat, default_lng, DEFAULT_ZOOM);  
-              alert('Something went wrong: ' + err + ' Setting default...');
-            } else {
-              mapInit(data.results[0].locations[0].latLng.lat, data.results[0].locations[0].latLng.lng, DEFAULT_ZOOM);
-              L.marker([data.results[0].locations[0].latLng.lat, data.results[0].locations[0].latLng.lng], {title: cityName}).addTo(map);
-            }
-              onMapLoad();         
-              });
-  };
-          
-  function getOSMApiResponse (cityName, searchFormToRemove){
+  function getOSMApiResponse (cityName, searchFormToRemove, table){
    
     let url_constructor_OSM = "http://nominatim.openstreetmap.org/search?format=json&city=" + cityName;
                            
@@ -208,19 +187,17 @@ function manualMapSet (cityName, MAP_REQUEST_API_KEY, DEFAULT_ZOOM){
                
                alert('Something went wrong: ' + err + '\nSetting default...');
             } else {
-                  
-                   let table = document.createElement("table");
                   //TODO: Implement 'Show All' button which would collapse the whole search table content
                    var i = 0;
-                   console.log(data[i]);
-                   let thisLat = 45;
-                      let thisLon = 15;
+                
                    while(data[i] != undefined){
                       
                       let tr = document.createElement('tr');   
 
                       let td1 = document.createElement('td');
+                      td1.className = "td1";
                       let td2 = document.createElement('td');
+                      td2.className = "td2";
                       let td3 = document.createElement('td');
 
                       let text1 = document.createTextNode(i+1);
@@ -325,8 +302,8 @@ var setWeatherIcons = function (owmObjectReference){
                     
                   currentWeatherIcons[i] = L.marker([owmObjectReference.list[i].coord.Lat, owmObjectReference.list[i].coord.Lon], {icon: myIcon[i],
                                                                                      title: string_title[0] + owmObjectReference.list[i].name 
-                                                                                    + '\n' +  string_title[1] + owmObjectReference.list[i].weather[0].description}).bindPopup(string_popup[i]).addTo(map);
- 
+                                                                                    + '\n' +  string_title[1] + owmObjectReference.list[i].weather[0].description}).bindPopup(string_popup[i]);
+                  weatherIconsLayer.addLayer(currentWeatherIcons[i]);
                    }
                     alreadySettingWeatherIcons = false;              
                 };
@@ -335,8 +312,6 @@ var setWeatherIcon = function (owmObjectReference){
               const prefix = 'wi wi-';
               let code;
               let icon;
-
-              globalMarkerReferenceCounter++;
 
               code = owmObjectReference.weather[0].id;
               icon = weatherIconsFile[code].icon;
@@ -349,8 +324,8 @@ var setWeatherIcon = function (owmObjectReference){
               icon = prefix + icon;
               //PLUGIN CODE END
 
-              var myIcon = L.divIcon({className: icon,
-                           iconSize: [-20,10]  //pomak od prave lokacije na mapi --BUG?-- 
+              let myIcon = L.divIcon({className: icon,
+                           iconSize: [20,-10]  //pomak od prave lokacije na mapi --BUG?-- 
                             });
 
                   let string_title = ["City: ", "Weather: "];  
@@ -360,28 +335,28 @@ var setWeatherIcon = function (owmObjectReference){
                                      '  <b>Pressure (hPa):</b> ' + owmObjectReference.main.pressure + '<br>' +
                                      '<b>Wind speed (m/s):</b> ' + owmObjectReference.wind.speed;
                     
-                  currentWeatherIcons[(globalMarkerReferenceCounter-1)] = L.marker([owmObjectReference.coord.lat, owmObjectReference.coord.lon], {icon: myIcon,
+                  onLoadMarkerRef[1] = L.marker([owmObjectReference.coord.lat, owmObjectReference.coord.lon], {icon: myIcon,
                                                                                      title: string_title[0] + owmObjectReference.name 
-                                                                                    + '\n' +  string_title[1] + owmObjectReference.weather[0].description}).bindPopup(string_popup).addTo(map);
+                                                                                    + '\n' +  string_title[1] + owmObjectReference.weather[0].description}).bindPopup(string_popup);
  
-                   
-                    alreadySettingWeatherIcons = false;              
+                  weatherIconsLayer.addLayer(onLoadMarkerRef[1]); 
+                  alreadySettingWeatherIcons = false;              
                 };
 
 var clearAndResetWeatherIcons = function (){
       alreadySettingWeatherIcons = true;
-      for(let i=0; i < globalMarkerReferenceCounter; i++){
-      map.removeLayer(currentWeatherIcons[i]);   
-      }
-          callWeatherIcons(); 
+      weatherIconsLayer.clearLayers();
+      callWeatherIcons(); 
+      if(onLoadMarkerRef[1] != undefined)
+        weatherIconsLayer.addLayer(onLoadMarkerRef[1]);
 };
 
 var clearAndResetWeatherIconsFromCache = function (cacheObject){
       alreadySettingWeatherIcons = true;
-      for(let i=0; i < globalMarkerReferenceCounter; i++){
-      map.removeLayer(currentWeatherIcons[i]);   
-      }
-          setWeatherIcons(cacheObject); 
+      weatherIconsLayer.clearLayers();
+      setWeatherIcons(cacheObject); 
+      if(onLoadMarkerRef[1] != undefined)
+        weatherIconsLayer.addLayer(onLoadMarkerRef[1]);
 };
 
 var setLeafletControlLayers = function () {
@@ -393,7 +368,7 @@ var setLeafletControlLayers = function () {
   var snow = L.OWM.snow({appId: '0826bd98905da40265152b2bb7f9d3e8', showLegend: false});
   var pressure = L.OWM.pressure({appId: '0826bd98905da40265152b2bb7f9d3e8', showLegend: false});
 
-  var overlayMaps = {"Temperature": temperature, "Clouds": clouds, 
+  var overlayMaps = {"Weather Icons": weatherIconsLayer,"Temperature": temperature, "Clouds": clouds, 
                      "Rain":rain, "Snow": snow, "Precipitation": precipitation, "Pressure": pressure};
                      
   var googleTileLayer = createGoogleTileLayer();
@@ -405,11 +380,11 @@ var setLeafletControlLayers = function () {
 
 };
 
-var getCurrentBoundsCacheCode = function() {
+var getCurrentBoundsCacheCode = function () {
   return map.getZoom() + returnCacheCodedBound(map.getBounds().getSouth()) + returnCacheCodedBound(map.getBounds().getWest());
 }
 
-var returnCacheCodedBound = function(thisBound) {
+var returnCacheCodedBound = function (thisBound) {
 
   let sign;
   let decimalPart;
@@ -539,7 +514,7 @@ var getWeatherByCityName = function (cityName, handlerFunction){
 
 };
 
-var WeatherByCityNameHandaler = function (err, owmObject) {
+var weatherByCityNameHandler = function (err, owmObject) {
 
     if(err != null){
       alert("Error while trying to reach weather by city name. " + "\nError: " + err);
@@ -551,45 +526,85 @@ var WeatherByCityNameHandaler = function (err, owmObject) {
 }
 
 function handleElement(i, data, table, formToRemove) {
-    document.getElementById("b"+i).onclick= function() {
+    document.getElementById("b"+i).onclick = function() {
         geoInfoLoad(data[i].lat, data[i].lon);
         document.body.removeChild(table);
         document.body.removeChild(formToRemove);
 
-        //create marker:
-         let markerRef = L.marker([data[i].lat, data[i].lon], {riseOnHover: true,
+        onLoadMarkerRef[0] = L.marker([data[i].lat, data[i].lon], {riseOnHover: true,
          title: data[i].display_name}).addTo(map);
 
-          getWeatherByCityName(data[i].display_name, WeatherByCityNameHandaler);
+        getWeatherByCityName(data[i].display_name, weatherByCityNameHandler);   //marker and weather icon will be dismissed only on new searchlocation:found event
+        setMarkerPopup(onLoadMarkerRef[0],{lat: data[i].lat, lng: data[i].lon});
+}}
 
-         //TO DO: WRAP U FUNKCIJU
-         let popupBox = document.createElement('div');
+
+function setMarkerPopup (markerRef, latlng){
+
+                          let defaultEntryNotClicked = true; 
+                          if(JSON.parse(localStorage.getItem('currentEntry'))){
+                              currentEntryObj = JSON.parse(localStorage.getItem('currentEntry'));
+                              latlng.lat = Number(latlng.lat);
+                              latlng.lng = Number(latlng.lng);
+                              currentEntryObj.lat= Number(currentEntryObj.lat);
+                              currentEntryObj.lng= Number(currentEntryObj.lng);
+                          if(latlng.lat.toFixed(2) == currentEntryObj.lat.toFixed(2) && latlng.lng.toFixed(2) == currentEntryObj.lng.toFixed(2)){
+                              defaultEntryNotClicked = false;
+                            }
+                             }
+                    
+                       let popupBox = document.createElement('div');
                        popupBox.className="box";
                        popupBox.innerText = 'Do you want to set this location as your default entry point?\n\n';
                        let locationSetButton = document.createElement('button');
                        locationSetButton.className="button";
                        locationSetButton.textContent = "Set Default"; 
                        popupBox.appendChild(locationSetButton);
-                       markerRef.bindPopup(popupBox);
-                       locationSetButton.addEventListener("click", () => {
-                       localStorage.removeItem('currentEntry');
-                       localStorage.setItem('currentEntry', JSON.stringify({lat: data[i].lat, lng: data[i].lon}));
-                       markerRef.closePopup();
-                       markerRef.unbindPopup();
-                       let popupBoxAfter = document.createElement('div');
-                       popupBoxAfter.className="box";
-                       popupBoxAfter.innerText = "This is now your new default entry point";
-                       markerRef.bindPopup(popupBoxAfter);
-                       });
-}}
 
+                        let popupBoxAfter = document.createElement('div');
+                        popupBoxAfter.className="box";
+                        popupBoxAfter.innerText = "This is your default entry point.\n\n";
+
+                        let locationResetButton = document.createElement('button');
+                        locationResetButton.className = "button";
+                        locationResetButton.textContent = "Dismiss";
+                        popupBoxAfter.appendChild(locationResetButton);
+
+                       markerRef.addEventListener("click", () => { 
+
+                        
+                        if(defaultEntryNotClicked){
+                          markerRef.unbindPopup();
+                          markerRef.bindPopup(popupBox);
+                          markerRef.openPopup();
+                          locationSetButton.addEventListener("click", () => {
+                           markerRef.closePopup();
+                           localStorage.removeItem('currentEntry');
+                           localStorage.setItem('currentEntry', JSON.stringify(latlng));
+                           defaultEntryNotClicked = false;
+                          });
+                          
+                        }else{
+                          markerRef.unbindPopup();
+                          markerRef.bindPopup(popupBoxAfter);
+                          markerRef.openPopup();
+                          locationResetButton.addEventListener("click", () => {
+                            localStorage.removeItem('currentEntry');
+                            markerRef.closePopup();
+                            defaultEntryNotClicked = true;
+                          });
+                          
+                         }
+                       });
+}
 //ENTRY POINT:
 
 if(localStorage.getItem('currentEntry')){
   let defaultEntry = JSON.parse(localStorage.getItem('currentEntry'));
-  console.log(defaultEntry);
   mapInit(defaultEntry.lat, defaultEntry.lng, DEFAULT_ZOOM);
   onMapLoad();
+  onLoadMarkerRef = [];
+  onLoadMarkerRef[0] = L.marker([defaultEntry.lat, defaultEntry.lng], {title: "Click for more information", riseOnHover: true}).addTo(map);
+  setMarkerPopup(onLoadMarkerRef[0], defaultEntry);
 }else
-
 navigator.geolocation.getCurrentPosition(geoSuccess, geoError, geoOptions); 
